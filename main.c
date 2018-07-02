@@ -16,7 +16,7 @@
 
 #define N 1024
 
-void convert(long n, long min, long max, void *buf);
+void convert(long n, long min, long max, void *buf, long chg_voice);
 
 void die(char *s);
 
@@ -37,7 +37,7 @@ void abort_handler(int signal) {
     exit(0);
 }
 
-// Usage ./iphone -s [source_port] -t [target_ip:port]
+// Usage ./iphone -s [source_port] -t [target_ip:port] -c [change_voice]
 int main(int argc, char **argv) {
 
     if (signal(SIGINT, abort_handler) == SIG_ERR) {
@@ -46,6 +46,7 @@ int main(int argc, char **argv) {
 
     // parse options
     int opt;
+    long change_voice = 0;
     int server_port, client_port;
     char *client_ip, *client_port_str;
     while ((opt = getopt(argc, argv, "r:t:c:")) != -1) {
@@ -66,10 +67,11 @@ int main(int argc, char **argv) {
                     exit(1);
                 }
                 break;
-//            case 'c':
-
+            case 'c':
+                change_voice = atoi(optarg);
+                break;
             default:
-                printf("Usage: %s [-r receive_port] [-t target_ip:port]\n", argv[0]);
+                printf("Usage: %s [-r receive_port] [-t target_ip:port] [-c change_voice]\n", argv[0]);
                 exit(1);
         }
     }
@@ -176,7 +178,7 @@ int main(int argc, char **argv) {
                 if (feof(fp_rec)) {
                     die("read");
                 }
-                convert(N, 300, 3400, data_rec);
+                convert(N, 300, 3400, data_rec, change_voice);
                 write(s, data_rec, sizeof(data_rec));
             }
             fclose(fp_rec);
@@ -258,6 +260,30 @@ void ifft(complex double *y,
     fft_r(y, x, n, w);
 }
 
+void voice_change(complex double *Y,
+                  long n,
+                  long chg_voice) {
+    complex double *Y_cpy = malloc(sizeof(complex double) * n);
+    memcpy(Y_cpy, Y, sizeof(complex double) * n);
+    long i;
+    if (chg_voice > 0) {
+        for (i = 0; i < chg_voice; ++i) {
+            Y[i] = 0;
+        }
+        for (i = chg_voice; i < n; ++i) {
+            Y[i] = Y_cpy[i - chg_voice];
+        }
+    } else {
+        chg_voice = -chg_voice;
+        for (i = 0; i < n - chg_voice; ++i) {
+            Y[i] = Y_cpy[i + chg_voice];
+        }
+        for (i = n - chg_voice; i < n; ++i) {
+            Y[i] = 0;
+        }
+    }
+}
+
 void bandpass(long min, long max, complex double *Y, long n) {
     for (long i = 0; i < min; i++) {
         Y[i] = 0;
@@ -267,11 +293,14 @@ void bandpass(long min, long max, complex double *Y, long n) {
     }
 }
 
-void convert(long n, long min, long max, void *buf) {
+void convert(long n, long min, long max, void *buf, long chg_voice) {
     complex double *X = calloc(sizeof(complex double), n);
     complex double *Y = calloc(sizeof(complex double), n);
     sample_to_complex(buf, X, n);
     fft(X, Y, n);
+    if (chg_voice != 0) {
+        voice_change(Y, n, chg_voice);
+    }
     bandpass(min, max, Y, n);
     ifft(Y, X, n);
     complex_to_sample(X, buf, n);
