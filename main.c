@@ -18,6 +18,8 @@
 
 void convert(long n, long min, long max, void *buf);
 
+void die(char *s);
+
 int ss, s, c, pid;
 FILE *fp_play, *fp_rec;
 
@@ -35,7 +37,7 @@ void abort_handler(int signal) {
     exit(0);
 }
 
-// ./iphone -s [source_port] -t [target_ip:port]
+// Usage ./iphone -s [source_port] -t [target_ip:port]
 int main(int argc, char **argv) {
 
     if (signal(SIGINT, abort_handler) == SIG_ERR) {
@@ -46,12 +48,12 @@ int main(int argc, char **argv) {
     int opt;
     int server_port, client_port;
     char *client_ip, *client_port_str;
-    while ((opt = getopt(argc, argv, "s:t:")) != -1) {
+    while ((opt = getopt(argc, argv, "r:t:c:")) != -1) {
         switch (opt) {
-            case 's':
+            case 'r':
                 server_port = atoi(optarg);
                 if (server_port == 0) {
-                    fprintf(stderr, "source port %s is invalid.", optarg);
+                    fprintf(stderr, "receive port %s is invalid.", optarg);
                     exit(1);
                 }
                 break;
@@ -64,8 +66,10 @@ int main(int argc, char **argv) {
                     exit(1);
                 }
                 break;
+//            case 'c':
+
             default:
-                printf("Usage: %s [-s source_port] [-c target_ip:port]\n", argv[0]);
+                printf("Usage: %s [-r receive_port] [-t target_ip:port]\n", argv[0]);
                 exit(1);
         }
     }
@@ -79,14 +83,13 @@ int main(int argc, char **argv) {
 
     if ((pid = fork()) == 0) {
 
-        printf("waiting for connection");
+        printf("waiting for connection...");
         fflush(stdout);
         // client settings
         while (1) {
             c = socket(AF_INET, SOCK_STREAM, 0);
             if (c == -1) {
-                perror("timeout");
-                exit(1);
+                die("timeout");
             }
 
             struct sockaddr_in addr;
@@ -109,16 +112,14 @@ int main(int argc, char **argv) {
         char data_play[N];
         fp_play = popen("play -q -t raw -b 16 -c 2 -e s -r 44100 - 2>/dev/null", "w");
         if (fp_play == NULL) {
-            perror("command");
-            exit(1);
+            die("command");
         }
 
         while (1) {
             // play
             int n = read(c, data_play, N);
             if (n == -1) {
-                perror("read");
-                exit(1);
+                die("read");
             }
             if (n == 0) break;
             fwrite(data_play, sizeof(data_play), 1, fp_play);
@@ -133,8 +134,7 @@ int main(int argc, char **argv) {
             // create socket
             ss = socket(AF_INET, SOCK_STREAM, 0);
             if (ss == -1) {
-                perror("timeout");
-                exit(1);
+                die("timeout");
             }
 
             if (setsockopt(ss, SOL_SOCKET, SO_REUSEADDR, &(int) {1}, sizeof(int)) < 0) {
@@ -157,8 +157,7 @@ int main(int argc, char **argv) {
             socklen_t len = sizeof(struct sockaddr_in);
             s = accept(ss, (struct sockaddr *) &client_addr, &len);
             if (s == -1) {
-                perror("timeout");
-                exit(1);
+                die("timeout");
             }
 
             close(ss);
@@ -167,8 +166,7 @@ int main(int argc, char **argv) {
             char data_rec[N];
             fp_rec = popen("rec -V1 -t raw -b 16 -c 2 -e s -r 44100 -", "r");
             if (fp_rec == NULL) {
-                perror("command");
-                exit(1);
+                die("command");
             }
 
             while (1) {
@@ -176,8 +174,7 @@ int main(int argc, char **argv) {
                 size_t size = fread(data_rec, N, 1, fp_rec);
                 if (size == 0) break;
                 if (feof(fp_rec)) {
-                    perror("read");
-                    exit(1);
+                    die("read");
                 }
                 convert(N, 300, 3400, data_rec);
                 write(s, data_rec, sizeof(data_rec));
